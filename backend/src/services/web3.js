@@ -78,21 +78,8 @@ class Web3Service {
     const roundInfo = await this.lotteryContract.getRoundInfo(currentRound);
     const ticketPrice = await this.lotteryContract.ticketPrice();
     const duration = await this.lotteryContract.lotteryDuration();
-    let isEnded = await this.lotteryContract.isRoundEnded();
-
-    // 🔧 修复：如果轮次已结束但还没抽奖，视为新轮次
-    // 这样前端会显示购票界面而不是Draw按钮
-    let startTime = Number(roundInfo[0]);
-    let hasWinner = roundInfo[5] !== '0x0000000000000000000000000000000000000000';
-    
-    if (isEnded && !hasWinner) {
-      // 轮次已结束但没有获奖者（还没抽奖）
-      // 返回当前时间作为虚拟新轮次的开始时间
-      // 并设置 isEnded = false，让前端显示购票界面
-      const block = await this.provider.getBlock('latest');
-      startTime = block.timestamp;
-      isEnded = false; // ✅ 关键：虚拟新轮次刚开始，不算结束
-    }
+    const isEnded = await this.lotteryContract.isRoundEnded();
+    const startTime = Number(roundInfo[0]);
 
     return {
       currentRound: currentRound.toString(),

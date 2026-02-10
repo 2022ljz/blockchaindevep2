@@ -49,6 +49,11 @@ contract Lottery is VRFRandomGame {
     }
 
     function buyTickets(uint256 numberOfTickets) external payable nonReentrant {
+        // 如果当前轮次已结束且无人购票，自动开启新轮次，避免卡死
+        if (isRoundEnded() && rounds[currentRound].totalTickets == 0 && !rounds[currentRound].drawn) {
+            _startNewRound();
+        }
+
         require(numberOfTickets > 0, "Must buy at least 1 ticket");
         require(msg.value == ticketPrice * numberOfTickets, "Incorrect payment");
         require(!isRoundEnded(), "Current round ended");
@@ -207,6 +212,13 @@ contract Lottery is VRFRandomGame {
         maxTicketsPerUser = _maxTicketsPerUser;
 
         emit ConfigUpdated(_ticketPrice, _duration);
+    }
+
+    /**
+     * @dev 管理员强制开启新轮次（仅在异常情况下使用）
+     */
+    function forceStartNewRound() external onlyOwner {
+        _startNewRound();
     }
 
     function emergencyRefund() external onlyOwner nonReentrant {
