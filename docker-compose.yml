@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongo:
+    image: mongo:7
+    container_name: game-platform-mongo
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:-password123}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - game-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: game-platform-backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - BACKEND_PORT=3001
+      - DATABASE_URL=mongodb://mongo:27017/game-platform
+      - RPC_URL=${RPC_URL}
+      - LOTTERY_CONTRACT=${LOTTERY_CONTRACT}
+      - DICE_CONTRACT=${DICE_CONTRACT}
+      - TOKEN_CONTRACT=${TOKEN_CONTRACT}
+    ports:
+      - "3001:3001"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - game-network
+    volumes:
+      - ./backend/src:/app/src:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # Frontend Web App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_API_URL=http://localhost:3001
+        - REACT_APP_NETWORK_ID=${CHAIN_ID:-11155111}
+        - REACT_APP_LOTTERY_CONTRACT=${LOTTERY_CONTRACT}
+        - REACT_APP_DICE_CONTRACT=${DICE_CONTRACT}
+    container_name: game-platform-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - game-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+networks:
+  game-network:
+    driver: bridge
+
+volumes:
+  mongo_data:
+    driver: local
