@@ -51,9 +51,14 @@ contract Lottery is VRFRandomGame {
     }
 
     function buyTickets(uint256 numberOfTickets) external payable nonReentrant {
-        // 如果当前轮次已结束且无人购票，自动开启新轮次，避免卡死
-        if (isRoundEnded() && rounds[currentRound].totalTickets == 0 && !rounds[currentRound].drawn) {
-            _startNewRound();
+        // 自动开启新轮次的情况：
+        // 1. 轮次结束 && 无人购票 && 未开奖
+        // 2. 轮次结束 && 已开奖（无论有无票）
+        if (isRoundEnded()) {
+            if ((rounds[currentRound].totalTickets == 0 && !rounds[currentRound].drawn) || 
+                rounds[currentRound].drawn) {
+                _startNewRound();
+            }
         }
 
         require(numberOfTickets > 0, "Must buy at least 1 ticket");

@@ -205,14 +205,31 @@ function Lottery({ account }) {
               <div className="stat-label">Ticket Price: {status.ticketPrice} ETH</div>
             </div>
 
-            {/* 买票界面 - 始终显示 */}
+            {/* 买票界面 - 根据轮次状态显示不同提示 */}
             <div className="form-group">
               <label className="form-label">Number of Tickets</label>
-              {(status.startTime + status.duration - currentTime) <= 0 && status.totalTickets === 0 && (
-                <div className="alert alert-info" style={{ marginBottom: '10px', padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '5px' }}>
-                  ℹ️ Round ended. Buying tickets will start a new round!
+              
+              {/* 情况1: 轮次结束 && 有票 && 未开奖 -> 必须先开奖 */}
+              {(status.startTime + status.duration - currentTime) <= 0 && status.totalTickets > 0 && !status.drawn && (
+                <div className="alert alert-warning" style={{ marginBottom: '10px', padding: '12px', backgroundColor: '#fff3cd', borderRadius: '5px', border: '1px solid #ffc107', color: '#856404' }}>
+                  ⚠️ Current round ended. Please draw winner first before buying new tickets!
                 </div>
               )}
+              
+              {/* 情况2: 轮次结束 && (无票 或 已开奖) -> 买票会开启新轮次 */}
+              {(status.startTime + status.duration - currentTime) <= 0 && (status.totalTickets === 0 || status.drawn) && status.winner !== '0x0000000000000000000000000000000000000000' && (
+                <div className="alert alert-info" style={{ marginBottom: '10px', padding: '12px', backgroundColor: '#e3f2fd', borderRadius: '5px', color: '#0c5460' }}>
+                  ℹ️ Previous round completed. Buying tickets will start Round #{parseInt(status.currentRound) + 1}!
+                </div>
+              )}
+              
+              {/* 情况3: 轮次结束 && 无票 && 未开奖 -> 直接开启新轮次 */}
+              {(status.startTime + status.duration - currentTime) <= 0 && status.totalTickets === 0 && !status.drawn && (
+                <div className="alert alert-info" style={{ marginBottom: '10px', padding: '12px', backgroundColor: '#e3f2fd', borderRadius: '5px', color: '#0c5460' }}>
+                  ℹ️ No tickets in previous round. Buying tickets will start a new round!
+                </div>
+              )}
+              
               <input
                 type="number"
                 className="form-input"
@@ -220,7 +237,7 @@ function Lottery({ account }) {
                 onChange={(e) => setTicketCount(parseInt(e.target.value) || 1)}
                 min="1"
                 max="100"
-                disabled={!account || purchasing}
+                disabled={!account || purchasing || ((status.startTime + status.duration - currentTime) <= 0 && status.totalTickets > 0 && !status.drawn)}
               />
               <div style={{ marginTop: '10px' }}>
                 Total Cost: {(parseFloat(status.ticketPrice) * ticketCount).toFixed(4)} ETH
@@ -228,7 +245,7 @@ function Lottery({ account }) {
               <button
                 className="btn"
                 onClick={handleBuyTickets}
-                disabled={!account || purchasing}
+                disabled={!account || purchasing || ((status.startTime + status.duration - currentTime) <= 0 && status.totalTickets > 0 && !status.drawn)}
                 style={{ marginTop: '15px' }}
               >
                 {purchasing ? 'Purchasing...' : 'Buy Tickets'}
