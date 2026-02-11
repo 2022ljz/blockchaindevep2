@@ -4,7 +4,7 @@ require('dotenv').config();
 // Contract ABIs (简化版本，包含主要函数)
 const LOTTERY_ABI = [
   "function currentRound() view returns (uint256)",
-  "function getRoundInfo(uint256 roundId) view returns (uint256 startTime, uint256 endTime, uint256 prizePool, uint256 totalTickets, uint256 playerCount, address winner, bool drawn)",
+  "function getRoundInfo(uint256 roundId) view returns (uint256 startTime, uint256 endTime, uint256 prizePool, uint256 totalTickets, uint256 playerCount, address winner, bool drawn, bool prizeClaimed)",
   "function getRoundPlayers(uint256 roundId) view returns (address[])",
   "function getPlayerTickets(address player) view returns (uint256)",
   "function ticketPrice() view returns (uint256)",
@@ -12,8 +12,10 @@ const LOTTERY_ABI = [
   "function isRoundEnded() view returns (bool)",
   "function buyTickets(uint256 numberOfTickets) payable",
   "function drawWinner()",
+  "function claimPrize(uint256 roundId)",
   "event TicketPurchased(uint256 indexed roundId, address indexed player, uint256 tickets)",
   "event WinnerSelected(uint256 indexed roundId, address indexed winner, uint256 prize)",
+  "event PrizeClaimed(uint256 indexed roundId, address indexed winner, uint256 prize)",
   "event LotteryStarted(uint256 indexed roundId, uint256 startTime)"
 ];
 
@@ -90,6 +92,7 @@ class Web3Service {
       playerCount: Number(roundInfo[4]),
       winner: roundInfo[5],
       drawn: roundInfo[6],
+      prizeClaimed: roundInfo[7],
       ticketPrice: ethers.formatEther(ticketPrice),
       duration: Number(duration),
       isEnded
@@ -102,18 +105,25 @@ class Web3Service {
     const currentRound = await this.lotteryContract.currentRound();
     const rounds = [];
 
-    for (let i = Math.max(1, Number(currentRound) - limit); i < currentRound; i++) {
-      const roundInfo = await this.lotteryContract.getRoundInfo(i);
-      rounds.push({
-        roundId: i,
-        startTime: Number(roundInfo[0]),
-        endTime: Number(roundInfo[1]),
-        prizePool: ethers.formatEther(roundInfo[2]),
-        totalTickets: Number(roundInfo[3]),
-        playerCount: Number(roundInfo[4]),
-        winner: roundInfo[5],
-        drawn: roundInfo[6]
-      });
+    // 包含当前轮次，从最近的轮次开始倒序
+    const startRound = Math.max(1, Number(currentRound) - limit + 1);
+    for (let i = Number(currentRound); i >= startRound; i--) {
+      try {
+        const roundInfo = await this.lotteryContract.getRoundInfo(i);
+        rounds.push({
+          roundId: i,
+          startTime: Number(roundInfo[0]),
+          endTime: Number(roundInfo[1]),
+          prizePool: ethers.formatEther(roundInfo[2]),
+          totalTickets: Number(roundInfo[3]),
+          playerCount: Number(roundInfo[4]),
+          winner: roundInfo[5],
+          drawn: roundInfo[6],
+          prizeClaimed: roundInfo[7]
+        });
+      } catch (error) {
+        console.error(`Error fetching round ${i}:`, error.message);
+      }
     }
 
     return rounds;

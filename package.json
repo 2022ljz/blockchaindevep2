@@ -1,0 +1,30 @@
+{
+  "name": "blockchaindevep2",
+  "version": "1.0.0",
+  "description": "一个基于 Chainlink VRF 的去中心化游戏平台，提供可证明公平的随机数生成。",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/2022ljz/blockchaindevep2.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/2022ljz/blockchaindevep2/issues"
+  },
+  "homepage": "https://github.com/2022ljz/blockchaindevep2#readme",
+  "devDependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.2.3",
+    "dotenv": "^17.2.4",
+    "ethers": "^5.8.0",
+    "hardhat": "^2.28.5"
+  },
+  "dependencies": {
+    "@chainlink/contracts": "^1.5.0",
+    "@openzeppelin/contracts": "^5.4.0"
+  }
+}

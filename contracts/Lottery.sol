@@ -28,6 +28,7 @@ contract Lottery is VRFRandomGame {
         uint256 winningTicket;
         uint256 vrfRequestId;
         bool drawn;
+        bool prizeClaimed;
     }
 
     mapping(uint256 => Round) public rounds;
@@ -38,6 +39,7 @@ contract Lottery is VRFRandomGame {
     event TicketPurchased(uint256 indexed roundId, address indexed player, uint256 tickets);
     event DrawInitiated(uint256 indexed roundId, uint256 vrfRequestId);
     event WinnerSelected(uint256 indexed roundId, address indexed winner, uint256 prize);
+    event PrizeClaimed(uint256 indexed roundId, address indexed winner, uint256 prize);
     event ConfigUpdated(uint256 ticketPrice, uint256 duration);
 
     constructor(
@@ -93,38 +95,21 @@ contract Lottery is VRFRandomGame {
     }
 
     // ⚠️ v2.5 base 常用 calldata，这里用 calldata 更稳
+    // ✅ 终极简化版本：移除所有不必要操作，最小化 gas
     function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
-        super.fulfillRandomWords(requestId, randomWords);
-
+        // ✅ 移除 super 调用，减少 gas
         uint256 roundId = requestIdToBetAmount[requestId];
         Round storage round = rounds[roundId];
 
-        // round.drawn 在 drawWinner 时已经设为 true，这里只防止重复选 winner
-        require(round.winner == address(0), "Winner already selected");
-        require(round.totalTickets > 0, "No tickets");
-
-        uint256 winningTicket = (randomWords[0] % round.totalTickets) + 1;
-        round.winningTicket = winningTicket;
-
-        address winner = _findWinnerByTicket(roundId, winningTicket);
-        round.winner = winner;
-
-        uint256 prize = (round.prizePool * (100 - houseEdge)) / 100;
-
-        if (winner != address(0) && prize > 0) {
-            playerTotalWinnings[winner] += prize;
-
-            // 建议用 call 避免 transfer 2300 gas 限制导致失败
-            (bool ok, ) = payable(winner).call{value: prize}("");
-            require(ok, "Payout failed");
-
-            totalWinnings += prize;
+        // ✅ 移除所有 require 检查，减少 gas
+        // 直接计算并存储，假设数据有效
+        if (round.totalTickets > 0 && round.winner == address(0)) {
+            uint256 winningTicket = (randomWords[0] % round.totalTickets) + 1;
+            round.winningTicket = winningTicket;
+            round.winner = _findWinnerByTicket(roundId, winningTicket);
+            totalGamesPlayed++;
+            emit WinnerSelected(roundId, round.winner, round.prizePool);
         }
-
-        totalGamesPlayed++;
-        emit WinnerSelected(roundId, winner, prize);
-
-        _startNewRound();
     }
 
     function _findWinnerByTicket(uint256 roundId, uint256 ticketNumber) private view returns (address) {
@@ -141,6 +126,31 @@ contract Lottery is VRFRandomGame {
         return address(0);
     }
 
+    /**
+     * @notice 获胜者领取奖励
+     * @param roundId 轮次 ID
+     */
+    function claimPrize(uint256 roundId) external nonReentrant {
+        Round storage round = rounds[roundId];
+        
+        require(round.winner == msg.sender, "Not the winner");
+        require(round.winner != address(0), "No winner yet");
+        require(!round.prizeClaimed, "Prize already claimed");
+        require(round.prizePool > 0, "No prize to claim");
+
+        round.prizeClaimed = true;
+        
+        uint256 prize = (round.prizePool * (100 - houseEdge)) / 100;
+        playerTotalWinnings[msg.sender] += prize;
+        totalWinnings += prize;
+        totalPrizePool -= round.prizePool;
+
+        (bool success, ) = payable(msg.sender).call{value: prize}("");
+        require(success, "Prize transfer failed");
+
+        emit PrizeClaimed(roundId, msg.sender, prize);
+    }
+
     function _startNewRound() private {
         currentRound++;
         roundStartTime = block.timestamp;
@@ -155,7 +165,8 @@ contract Lottery is VRFRandomGame {
             winner: address(0),
             winningTicket: 0,
             vrfRequestId: 0,
-            drawn: false
+            drawn: false,
+            prizeClaimed: false
         });
 
         emit LotteryStarted(currentRound, block.timestamp);
@@ -180,7 +191,8 @@ contract Lottery is VRFRandomGame {
         uint256 totalTickets,
         uint256 playerCount,
         address winner,
-        bool drawn
+        bool drawn,
+        bool prizeClaimed
     ) {
         Round storage round = rounds[roundId];
         return (
@@ -190,7 +202,8 @@ contract Lottery is VRFRandomGame {
             round.totalTickets,
             round.players.length,
             round.winner,
-            round.drawn
+            round.drawn,
+            round.prizeClaimed
         );
     }
 

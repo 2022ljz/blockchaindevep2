@@ -69,7 +69,15 @@ function Lottery({ account }) {
       loadData();
     } catch (error) {
       console.error('Error buying tickets:', error);
-      toast.error(error.reason || 'Failed to purchase tickets');
+      let errorMsg = 'Failed to purchase tickets';
+      if (error.reason) {
+        errorMsg = error.reason;
+      } else if (error.message) {
+        errorMsg = error.message.includes('user rejected') 
+          ? 'Transaction rejected by user' 
+          : error.message.substring(0, 100);
+      }
+      toast.error(errorMsg);
     } finally {
       setPurchasing(false);
     }
@@ -92,7 +100,54 @@ function Lottery({ account }) {
       loadData(); // 🔧 立即刷新，不要等 1 分钟
     } catch (error) {
       console.error('Error drawing winner:', error);
-      toast.error(error.reason || 'Failed to draw winner');
+      let errorMsg = 'Failed to draw winner';
+      if (error.reason) {
+        errorMsg = error.reason;
+      } else if (error.message) {
+        if (error.message.includes('user rejected')) {
+          errorMsg = 'Transaction rejected by user';
+        } else if (error.message.includes('InvalidConsumer')) {
+          errorMsg = '⚠️ Contract not added to VRF Subscription! Please add contract as Consumer at vrf.chain.link';
+        } else {
+          errorMsg = error.message.substring(0, 150);
+        }
+      }
+      toast.error(errorMsg, { autoClose: 8000 });
+    }
+  };
+
+  const handleClaimPrize = async (roundId) => {
+    if (!account) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+
+    try {
+      const contract = await getContract(LOTTERY_ADDRESS, LOTTERY_ABI);
+      const tx = await contract.claimPrize(roundId);
+      
+      toast.info('Claiming your prize...');
+      await tx.wait();
+      toast.success('🎉 Prize claimed successfully!');
+      
+      loadData();
+    } catch (error) {
+      console.error('Error claiming prize:', error);
+      let errorMsg = 'Failed to claim prize';
+      if (error.reason) {
+        errorMsg = error.reason;
+      } else if (error.message) {
+        if (error.message.includes('user rejected')) {
+          errorMsg = 'Transaction rejected by user';
+        } else if (error.message.includes('Not the winner')) {
+          errorMsg = 'You are not the winner of this round';
+        } else if (error.message.includes('already claimed')) {
+          errorMsg = 'Prize has already been claimed';
+        } else {
+          errorMsg = error.message.substring(0, 150);
+        }
+      }
+      toast.error(errorMsg);
     }
   };
 
@@ -150,33 +205,40 @@ function Lottery({ account }) {
               <div className="stat-label">Ticket Price: {status.ticketPrice} ETH</div>
             </div>
 
-            {(status.startTime + status.duration - currentTime) > 0 ? (
-              <div className="form-group">
-                <label className="form-label">Number of Tickets</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={ticketCount}
-                  onChange={(e) => setTicketCount(parseInt(e.target.value) || 1)}
-                  min="1"
-                  max="100"
-                  disabled={!account || purchasing}
-                />
-                <div style={{ marginTop: '10px' }}>
-                  Total Cost: {(parseFloat(status.ticketPrice) * ticketCount).toFixed(4)} ETH
+            {/* 买票界面 - 始终显示 */}
+            <div className="form-group">
+              <label className="form-label">Number of Tickets</label>
+              {(status.startTime + status.duration - currentTime) <= 0 && status.totalTickets === 0 && (
+                <div className="alert alert-info" style={{ marginBottom: '10px', padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '5px' }}>
+                  ℹ️ Round ended. Buying tickets will start a new round!
                 </div>
-                <button
-                  className="btn"
-                  onClick={handleBuyTickets}
-                  disabled={!account || purchasing}
-                  style={{ marginTop: '15px' }}
-                >
-                  {purchasing ? 'Purchasing...' : 'Buy Tickets'}
-                </button>
+              )}
+              <input
+                type="number"
+                className="form-input"
+                value={ticketCount}
+                onChange={(e) => setTicketCount(parseInt(e.target.value) || 1)}
+                min="1"
+                max="100"
+                disabled={!account || purchasing}
+              />
+              <div style={{ marginTop: '10px' }}>
+                Total Cost: {(parseFloat(status.ticketPrice) * ticketCount).toFixed(4)} ETH
               </div>
-            ) : (
-              <div>
-                {!status.drawn && (
+              <button
+                className="btn"
+                onClick={handleBuyTickets}
+                disabled={!account || purchasing}
+                style={{ marginTop: '15px' }}
+              >
+                {purchasing ? 'Purchasing...' : 'Buy Tickets'}
+              </button>
+            </div>
+
+            {/* 抽奖按钮 - 仅在轮次结束且有票时显示 */}
+            {(status.startTime + status.duration - currentTime) <= 0 && status.totalTickets > 0 && (
+              <div style={{ marginTop: '20px' }}>
+                {!status.drawn ? (
                   <button
                     className="btn"
                     onClick={handleDraw}
@@ -184,10 +246,17 @@ function Lottery({ account }) {
                   >
                     Draw Winner 🎉
                   </button>
-                )}
-                {status.drawn && (
+                ) : status.winner === '0x0000000000000000000000000000000000000000' ? (
                   <div className="alert alert-info">
                     Drawing in progress... Please wait for Chainlink VRF to respond.
+                    <div style={{ fontSize: '14px', marginTop: '10px', opacity: 0.8 }}>
+                      This usually takes 30-120 seconds. The page will auto-refresh.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="alert alert-success" style={{ backgroundColor: '#d4edda', color: '#155724' }}>
+                    ✅ Winner selected! Round #{status.currentRound} is complete.
+                    <div style={{ marginTop: '5px' }}>Winner: {status.winner.slice(0, 10)}...{status.winner.slice(-8)}</div>
                   </div>
                 )}
               </div>
@@ -207,6 +276,7 @@ function Lottery({ account }) {
                 <th>Tickets</th>
                 <th>Winner</th>
                 <th>Status</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -220,7 +290,26 @@ function Lottery({ account }) {
                       ? `${round.winner.slice(0, 6)}...${round.winner.slice(-4)}`
                       : 'N/A'}
                   </td>
-                  <td>{round.drawn ? '✅ Complete' : '⏳ Pending'}</td>
+                  <td>
+                    {round.winner !== '0x0000000000000000000000000000000000000000'
+                      ? (round.prizeClaimed ? '💰 Claimed' : '✅ Complete')
+                      : round.drawn
+                      ? '🔄 Drawing...'
+                      : '⌛ Pending'}
+                  </td>
+                  <td>
+                    {round.winner !== '0x0000000000000000000000000000000000000000' 
+                      && !round.prizeClaimed 
+                      && round.winner.toLowerCase() === account?.toLowerCase() ? (
+                      <button
+                        className="btn"
+                        onClick={() => handleClaimPrize(round.roundId)}
+                        style={{ padding: '5px 15px', fontSize: '14px' }}
+                      >
+                        Claim Prize 🎁
+                      </button>
+                    ) : '-'}
+                  </td>
                 </tr>
               ))}
             </tbody>

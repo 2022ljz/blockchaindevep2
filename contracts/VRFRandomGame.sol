@@ -20,7 +20,7 @@ abstract contract VRFRandomGame is VRFConsumerBaseV2Plus, ReentrancyGuard {
     uint256 public subscriptionId;
 
     bytes32 public keyHash;
-    uint32 public callbackGasLimit = 200000;
+    uint32 public callbackGasLimit = 400000; // 降低到 400000 - 高 gas limit 会导致 LINK 预留不足
     uint16 public requestConfirmations = 3;
 
     // v2.5 ExtraArgs: false = pay via LINK subscription, true = native payment (if supported)
